@@ -1,0 +1,15 @@
+services:
+  mini_storage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mini_storage
+    environment:
+      PORT: "8080"
+      STORAGE_DIR: /app/storage
+      MAX_UPLOAD_SIZE_MB: "10"
+      DATABASE_PATH: /app/storage/metadata.db
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./storage:/app/storage
