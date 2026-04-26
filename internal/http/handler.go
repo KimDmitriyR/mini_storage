@@ -29,26 +29,28 @@ type metadataRepository interface {
 }
 
 type Handler struct {
-	storage  fileStorage
-	metadata metadataRepository
+	storage            fileStorage
+	metadata           metadataRepository
+	maxUploadSizeBytes int64
 }
 
-func NewHandler(fileStorage fileStorage, metadataRepo metadataRepository) *Handler {
+func NewHandler(fileStorage fileStorage, metadataRepo metadataRepository, maxUploadSizeBytes int64) *Handler {
 	return &Handler{
-		storage:  fileStorage,
-		metadata: metadataRepo,
+		storage:            fileStorage,
+		metadata:           metadataRepo,
+		maxUploadSizeBytes: maxUploadSizeBytes,
 	}
 }
 
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, fmt.Sprintf("parse multipart form: %v", err), http.StatusBadRequest)
+	if err := r.ParseMultipartForm(h.multipartMemoryLimit()); err != nil {
+		writeError(w, uploadErrorStatus(err), "invalid multipart upload request")
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("read multipart file: %v", err), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file field is required")
 		return
 	}
 	defer file.Close()
@@ -63,7 +65,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	savedFile, err := h.storage.Save(r.Context(), header.Filename, file)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("save file: %v", err), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to save file")
 		return
 	}
 
@@ -77,13 +79,13 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.metadata.Create(r.Context(), fileMetadata); err != nil {
 		_ = h.storage.Delete(savedFile.StoredName)
-		http.Error(w, fmt.Sprintf("store metadata: %v", err), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to store file metadata")
 		return
 	}
 
 	storedFile, err := h.metadata.GetByID(r.Context(), fileMetadata.ID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("fetch stored metadata: %v", err), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to fetch stored file metadata")
 		return
 	}
 
@@ -93,7 +95,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	files, err := h.metadata.List(r.Context())
 	if err != nil {
-		http.Error(w, fmt.Sprintf("list metadata: %v", err), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to list files")
 		return
 	}
 
@@ -108,7 +110,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		http.Error(w, fmt.Sprintf("get metadata: %v", err), statusCode)
+		writeError(w, statusCode, "file metadata not found")
 		return
 	}
 
@@ -119,7 +121,12 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		http.Error(w, fmt.Sprintf("open file: %v", err), statusCode)
+		if statusCode == http.StatusNotFound {
+			writeError(w, statusCode, "file content not found")
+			return
+		}
+
+		writeError(w, statusCode, "failed to open file")
 		return
 	}
 	defer storedFile.Reader.Close()
@@ -143,7 +150,12 @@ func (h *Handler) GetFileMetadata(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		http.Error(w, fmt.Sprintf("get metadata: %v", err), statusCode)
+		if statusCode == http.StatusNotFound {
+			writeError(w, statusCode, "file metadata not found")
+			return
+		}
+
+		writeError(w, statusCode, "failed to fetch file metadata")
 		return
 	}
 
@@ -158,12 +170,17 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		http.Error(w, fmt.Sprintf("get metadata: %v", err), statusCode)
+		if statusCode == http.StatusNotFound {
+			writeError(w, statusCode, "file metadata not found")
+			return
+		}
+
+		writeError(w, statusCode, "failed to fetch file metadata")
 		return
 	}
 
 	if err := h.storage.Delete(fileMetadata.StoredName); err != nil && !errors.Is(err, storage.ErrFileNotFound) {
-		http.Error(w, fmt.Sprintf("delete file: %v", err), http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to delete file from storage")
 		return
 	}
 
@@ -173,9 +190,24 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		http.Error(w, fmt.Sprintf("delete metadata: %v", err), statusCode)
+		if statusCode == http.StatusNotFound {
+			writeError(w, statusCode, "file metadata not found")
+			return
+		}
+
+		writeError(w, statusCode, "failed to delete file metadata")
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) multipartMemoryLimit() int64 {
+	const defaultMaxMemory = int64(32 << 20)
+
+	if h.maxUploadSizeBytes <= 0 || h.maxUploadSizeBytes > defaultMaxMemory {
+		return defaultMaxMemory
+	}
+
+	return h.maxUploadSizeBytes
 }

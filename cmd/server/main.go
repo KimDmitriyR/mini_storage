@@ -40,7 +40,8 @@ func main() {
 	server := &http.Server{
 		Addr: cfg.Address(),
 		Handler: httpapi.NewRouter(httpapi.RouterOptions{
-			Handler: httpapi.NewHandler(fileStorage, metadataRepository),
+			Handler:            httpapi.NewHandler(fileStorage, metadataRepository, cfg.MaxUploadSizeBytes()),
+			MaxUploadSizeBytes: cfg.MaxUploadSizeBytes(),
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

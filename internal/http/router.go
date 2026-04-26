@@ -1,23 +1,26 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 
+	appmiddleware "github.com/KimDmitriyR/mini_storage/internal/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
 type RouterOptions struct {
-	Handler *Handler
+	Handler            *Handler
+	MaxUploadSizeBytes int64
 }
 
 func NewRouter(options RouterOptions) http.Handler {
 	router := chi.NewRouter()
+	router.Use(appmiddleware.RequestLogger)
+	router.Use(appmiddleware.Recovery)
 	router.Get("/health", healthHandler)
 
 	if options.Handler != nil {
 		router.Route("/files", func(r chi.Router) {
-			r.Post("/", options.Handler.UploadFile)
+			r.With(appmiddleware.RequestBodyLimit(options.MaxUploadSizeBytes)).Post("/", options.Handler.UploadFile)
 			r.Get("/", options.Handler.ListFiles)
 			r.Get("/{id}", options.Handler.DownloadFile)
 			r.Get("/{id}/meta", options.Handler.GetFileMetadata)
@@ -30,11 +33,4 @@ func NewRouter(options RouterOptions) http.Handler {
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	_ = json.NewEncoder(w).Encode(payload)
 }
