@@ -12,6 +12,8 @@ import (
 
 	"github.com/KimDmitriyR/mini_storage/internal/config"
 	httpapi "github.com/KimDmitriyR/mini_storage/internal/http"
+	"github.com/KimDmitriyR/mini_storage/internal/metadata"
+	"github.com/KimDmitriyR/mini_storage/internal/storage"
 )
 
 func main() {
@@ -20,9 +22,26 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	fileStorage, err := storage.NewLocal(cfg.StorageDir)
+	if err != nil {
+		log.Fatalf("init file storage: %v", err)
+	}
+
+	metadataRepository, err := metadata.NewSQLite(cfg.DatabasePath)
+	if err != nil {
+		log.Fatalf("init metadata repository: %v", err)
+	}
+	defer func() {
+		if err := metadataRepository.Close(); err != nil {
+			log.Printf("close metadata repository: %v", err)
+		}
+	}()
+
 	server := &http.Server{
-		Addr:              cfg.Address(),
-		Handler:           httpapi.NewRouter(httpapi.RouterOptions{}),
+		Addr: cfg.Address(),
+		Handler: httpapi.NewRouter(httpapi.RouterOptions{
+			Handler: httpapi.NewHandler(fileStorage, metadataRepository),
+		}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
