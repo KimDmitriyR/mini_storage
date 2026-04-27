@@ -56,6 +56,16 @@ cp .env.example .env
 go run ./cmd/server
 ```
 
+Запуск в PowerShell с явными переменными окружения:
+
+```powershell
+$env:PORT="8080"
+$env:STORAGE_DIR="storage"
+$env:MAX_UPLOAD_SIZE_MB="10"
+$env:DATABASE_PATH="storage/metadata.db"
+go run ./cmd/server
+```
+
 Проверка health endpoint:
 
 ```bash
@@ -116,6 +126,13 @@ curl http://localhost:8080/files/<file_id>/meta
 
 ```bash
 curl -X DELETE http://localhost:8080/files/<file_id>
+```
+
+Для PowerShell удобнее использовать `curl.exe`, чтобы не попасть на алиас `Invoke-WebRequest`:
+
+```powershell
+curl.exe -X POST http://localhost:8080/files -F "file=@README.md"
+curl.exe http://localhost:8080/files
 ```
 
 ## Разработка и проверки
