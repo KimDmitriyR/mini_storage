@@ -142,6 +142,29 @@ func TestUploadRejectsLargeFiles(t *testing.T) {
 	}
 }
 
+func TestDownloadMissingFileReturnsJSONError(t *testing.T) {
+	t.Parallel()
+
+	router := newTestRouter(t, 1024*1024)
+
+	request := httptest.NewRequest(http.MethodGet, "/files/missing-id", nil)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("download missing file status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response error = %v", err)
+	}
+
+	if payload["error"] != "file metadata not found" {
+		t.Fatalf("error message = %q, want %q", payload["error"], "file metadata not found")
+	}
+}
+
 func newTestRouter(t *testing.T, maxUploadSizeBytes int64) http.Handler {
 	t.Helper()
 

@@ -110,7 +110,12 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusNotFound
 		}
 
-		writeError(w, statusCode, "file metadata not found")
+		if statusCode == http.StatusNotFound {
+			writeError(w, statusCode, "file metadata not found")
+			return
+		}
+
+		writeError(w, statusCode, "failed to fetch file metadata")
 		return
 	}
 
